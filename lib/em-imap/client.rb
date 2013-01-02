@@ -12,11 +12,14 @@ module EventMachine
       end
 
       def connect
+        f = Fiber.current
         @connection = EM::IMAP::Connection.connect(*@connect_args)
         @connection.errback{ |e| fail e }.
                     callback{ |*args| succeed *args }
 
-        @connection.hello_listener
+        @connection.hello_listener.callback { f.resume(self) }.
+                                   errback  { f.resume(self) }
+        Fiber.yield
       end
 
       def disconnect
@@ -79,14 +82,17 @@ module EventMachine
       # see for example the gmail_xoauth gem.
       #  
       def authenticate(auth_type, *args)
+        connect unless @connection
         # Extract these first so that any exceptions can be raised
         # before the command is created.
         auth_type = auth_type.upcase
         auth_handler = authenticator(auth_type, *args)
-
+        
+        f = Fiber.current
         tagged_response('AUTHENTICATE', auth_type).tap do |command|
           @connection.send_authentication_data(auth_handler, command)
-        end
+        end.callback { |*args| f.resume(*args) }.errback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       # Authenticate with a username and password.
@@ -478,6 +484,8 @@ module EventMachine
 
       # From Net::IMAP
       def fetch_internal(cmd, set, attr)
+        f = Fiber.current
+        
         case attr
         when String then
           attr = Net::IMAP::RawData.new(attr)
@@ -491,22 +499,28 @@ module EventMachine
 
         collect_untagged_responses('FETCH', cmd, set, attr).transform do |untagged_responses|
           untagged_responses.map(&:data)
-        end
+        end.callback { |*args| f.resume(*args) }.errback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       # Ensure that the flags are symbols, and that the message set is a message set.
       def store_internal(cmd, set, attr, flags)
+        f = Fiber.current
+        
         flags = flags.map(&:to_sym)
         set = Net::IMAP::MessageSet.new(set)
         collect_untagged_responses('FETCH', cmd, set, attr, flags).transform do |untagged_responses|
           untagged_responses.map(&:data)
-        end
+        end.callback { |*args| f.resume(*args) }.errback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       def search_internal(command, *args)
+        f = Fiber.current
         collect_untagged_responses('SEARCH', command, *normalize_search_criteria(args)).transform do |untagged_responses|
           untagged_responses.last.data
-        end
+        end.callback { |*args| f.resume(*args) }.errback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       # Recursively find all the message sets in the arguments and convert them so that

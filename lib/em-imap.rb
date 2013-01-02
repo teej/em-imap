@@ -3,6 +3,7 @@ require 'set'
 require 'rubygems'
 require 'eventmachine'
 require 'deferrable_gratification'
+require 'em-synchrony'
 
 $:.unshift File.dirname( __FILE__ )
 require 'net/imap'
