@@ -53,13 +53,15 @@ module EventMachine
       # to fail, and render this client unusable.
       #
       def logout
+        f = Fiber.current
         command = tagged_response("LOGOUT").errback do |e|
           if e.is_a? Net::IMAP::ByeResponseError
             # RFC 3501 says the server MUST send a BYE response and then close the connection.
             disconnect
             command.succeed
           end
-        end
+        end.callback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       ## 6.2 Client Commands - Not Authenticated State
