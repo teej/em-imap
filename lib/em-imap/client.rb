@@ -475,13 +475,16 @@ module EventMachine
 
       # Extract more useful data from the LIST and LSUB commands, see #list for details. 
       def list_internal(cmd, refname, pattern)
+        f = Fiber.current
+        
         multi_data_response(cmd, to_utf7(refname), to_utf7(pattern)).transform do |untagged_responses|
           untagged_responses.map(&:data).map do |data|
             data.dup.tap do |new_data|
               new_data.name = to_utf8(data.name)
             end
           end
-        end
+        end.callback { |*args| f.resume(*args) }.errback { |*args| f.resume(*args) }
+        Fiber.yield
       end
 
       # From Net::IMAP
